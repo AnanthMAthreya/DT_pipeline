@@ -1,0 +1,299 @@
+# PIPELINE DEFINITION
+# Name: decision-tree-classifier-kubeflow-demo-pipeline
+# Description: A sample pipeline that performs Decision tree classifier
+components:
+  comp-get-metrics:
+    executorLabel: exec-get-metrics
+    inputDefinitions:
+      artifacts:
+        input_model:
+          artifactType:
+            schemaTitle: system.Model
+            schemaVersion: 0.0.1
+        input_test_data:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+        input_train_data:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+  comp-prepare-data:
+    executorLabel: exec-prepare-data
+    outputDefinitions:
+      artifacts:
+        output_data:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+  comp-train-decision-tree:
+    executorLabel: exec-train-decision-tree
+    inputDefinitions:
+      artifacts:
+        input_train_data:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+    outputDefinitions:
+      artifacts:
+        output_model:
+          artifactType:
+            schemaTitle: system.Model
+            schemaVersion: 0.0.1
+  comp-train-test-split:
+    executorLabel: exec-train-test-split
+    inputDefinitions:
+      artifacts:
+        input_data:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+    outputDefinitions:
+      artifacts:
+        output_test_data:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+        output_train_data:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+deploymentSpec:
+  executors:
+    exec-get-metrics:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - get_metrics
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.11.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'pandas==2.2.3'\
+          \ 'numpy==2.2.0' 'scikit-learn==1.6.0' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef get_metrics(input_train_data: Input[Dataset], input_test_data:\
+          \ Input[Dataset], input_model: Input[Model]):\n    from sklearn.metrics\
+          \ import confusion_matrix as cm\n    import numpy as np\n    import pickle\n\
+          \    X_train = np.load(input_train_data.path + '/X_train.npy', allow_pickle=True)\n\
+          \    y_train = np.load(input_train_data.path + '/y_train.npy', allow_pickle=True)\n\
+          \    X_test = np.load(input_test_data.path + '/X_test.npy', allow_pickle=True)\n\
+          \    y_test = np.load(input_test_data.path + '/y_test.npy', allow_pickle=True)\n\
+          \    with open(input_model.path,'rb') as f:\n        model = pickle.load(f)\n\
+          \    y_pred_train=model.predict(X_train)\n    cm1=cm(y_train,y_pred_train)\n\
+          \    acc1=(cm1[0,0]+cm1[1,1])/sum([sum(i) for i in cm1])\n    print(\"The\
+          \ train accuracy is \",acc1)\n    y_pred_test=model.predict(X_test)\n  \
+          \  cm2=cm(y_test,y_pred_test)\n    acc2=(cm2[0,0]+cm2[1,1])/sum([sum(i)\
+          \ for i in cm2])\n    print(\"The test accuracy is \",acc2)\n    print(\"\
+          THe difference in the accuracies is \",abs(acc1-acc2))\n\n"
+        image: python:3.13.1
+    exec-prepare-data:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - prepare_data
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.11.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'pandas==2.2.3'\
+          \ 'numpy==2.2.0' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef prepare_data(output_data: Output[Dataset]):\n    print(\"Inside\
+          \ prepare data component\")\n    data = pd.read_csv(\"dataset.csv\")\n \
+          \   data['Attrition']=data['Attrition'].map({\"Yes\":1,\"No\":0}).astype(int)\n\
+          \    data['BusinessTravel'] = data['BusinessTravel'].astype(str)\n    data['BusinessTravel']\
+          \ = data['BusinessTravel'].str.strip()\n    data['BusinessTravel'] = data['BusinessTravel'].map(\n\
+          \    {'Non-travel': 0, 'Travel_Rarely': 1, 'Travel_Frequently': 2})\n  \
+          \  data['BusinessTravel'] = data['BusinessTravel'].fillna(0)\n    data['Department']=data['Department'].map({'Sales':0,\
+          \ 'Research & Development':1, 'Human Resources':2}).astype(int)\n    data['EducationField']=data['EducationField'].map({'Life\
+          \ Sciences':1,'Other':0,'Medical':2,'Marketing':3,'Technical Degree':4,'Human\
+          \ Resources':5}).astype(int)\n    data['Gender']=data['Gender'].map({'Female':0,\
+          \ 'Male':1}).astype(int)\n    data['JobRole']=data['JobRole'].map({'Sales\
+          \ Executive':0, 'Research Scientist':1, 'Laboratory Technician':2,\n   \
+          \    'Manufacturing Director':3, 'Healthcare Representative':4, 'Manager':5,\n\
+          \       'Sales Representative':6, 'Research Director':7, 'Human Resources':8}).astype(int)\n\
+          \    data['MaritalStatus']=data['MaritalStatus'].map({'Single':0, 'Married':1,\
+          \ 'Divorced':2}).astype(int)\n    data['OverTime']=data['OverTime'].map({'Yes':1,'No':0}).astype(int)\n\
+          \    data.to_csv(output_data.path, index=False)\n    print('The prepared\
+          \ data is saved in final_data.csv artifact')\n\n"
+        image: python:3.13.1
+    exec-train-decision-tree:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - train_decision_tree
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.11.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'pandas==2.2.3'\
+          \ 'numpy==2.2.0' 'scikit-learn==1.6.0' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef train_decision_tree(input_train_data: Input[Dataset], output_model:\
+          \ Output[Model]):\n    import pandas as pd\n    import numpy as np\n   \
+          \ import pickle\n    from sklearn import tree\n    print(\"Inside decision-tree-classifier\"\
+          )\n    X_train = np.load(input_train_data.path + '/X_train.npy', allow_pickle=True)\n\
+          \    y_train = np.load(input_train_data.path + '/y_train.npy', allow_pickle=True)\n\
+          \    model=tree.DecisionTreeClassifier(max_depth=3)\n    model.fit(X_train,y_train)\n\
+          \    with open(output_model.path,'wb') as f:\n        pickle.dump(model,\
+          \ f)\n    print(\"The decision tree model is saved\")\n\n"
+        image: python:3.13.1
+    exec-train-test-split:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - train_test_split
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.11.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'pandas==2.2.3'\
+          \ 'numpy==2.2.0' 'scikit-learn==1.6.0' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef train_test_split(input_data: Input[Dataset], output_train_data:\
+          \ Output[Dataset], output_test_data: Output[Dataset]):\n    import pandas\
+          \ as pd\n    import numpy as np\n    from sklearn.model_selection import\
+          \ train_test_split as tts\n    print(\"---- Inside train_test_split component\
+          \ ----\")\n    data=pd.read_csv(input_data.path)\n    features=['Age','BusinessTravel','DailyRate',\
+          \ 'Department','DistanceFromHome', 'Education', 'EducationField', 'EnvironmentSatisfaction',\
+          \ 'Gender', 'HourlyRate', 'JobInvolvement', 'JobLevel', 'JobRole', 'JobSatisfaction',\
+          \ 'MaritalStatus', 'MonthlyIncome','MonthlyRate', 'NumCompaniesWorked',\
+          \ 'OverTime', 'PercentSalaryHike', 'PerformanceRating', 'RelationshipSatisfaction',\
+          \ 'StockOptionLevel', 'TotalWorkingYears','TrainingTimesLastYear','WorkLifeBalance','YearsAtCompany',\
+          \ 'YearsInCurrentRole', 'YearsSinceLastPromotion','YearsWithCurrManager']\n\
+          \    X=data[features]\n    y=data['Attrition']\n    X_train,X_test,y_train,y_test=tts(X,y,test_size=0.3,stratify=y,random_state=47)\n\
+          \    np.save(output_train_data.path + '/X_train.npy', X_train)\n    np.save(output_train_data.path\
+          \ + '/y_train.npy', y_train)\n    np.save(output_test_data.path + '/X_test.npy',\
+          \ X_test)\n    np.save(output_test_data.path + '/y_test.npy', y_test)\n\
+          \    print(\"All the 4 parts have been saved\")\n\n"
+        image: python:3.13.1
+pipelineInfo:
+  description: A sample pipeline that performs Decision tree classifier
+  name: decision-tree-classifier-kubeflow-demo-pipeline
+root:
+  dag:
+    tasks:
+      get-metrics:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-get-metrics
+        dependentTasks:
+        - train-decision-tree
+        - train-test-split
+        inputs:
+          artifacts:
+            input_model:
+              taskOutputArtifact:
+                outputArtifactKey: output_model
+                producerTask: train-decision-tree
+            input_test_data:
+              taskOutputArtifact:
+                outputArtifactKey: output_test_data
+                producerTask: train-test-split
+            input_train_data:
+              taskOutputArtifact:
+                outputArtifactKey: output_train_data
+                producerTask: train-test-split
+        taskInfo:
+          name: get-metrics
+      prepare-data:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-prepare-data
+        taskInfo:
+          name: prepare-data
+      train-decision-tree:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-train-decision-tree
+        dependentTasks:
+        - train-test-split
+        inputs:
+          artifacts:
+            input_train_data:
+              taskOutputArtifact:
+                outputArtifactKey: output_train_data
+                producerTask: train-test-split
+        taskInfo:
+          name: train-decision-tree
+      train-test-split:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-train-test-split
+        dependentTasks:
+        - prepare-data
+        inputs:
+          artifacts:
+            input_data:
+              taskOutputArtifact:
+                outputArtifactKey: output_data
+                producerTask: prepare-data
+        taskInfo:
+          name: train-test-split
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.11.0
