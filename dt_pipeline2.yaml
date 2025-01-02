@@ -182,7 +182,7 @@ deploymentSpec:
           Inside decision-tree-classifier\")\n\n    # Load training data\n    X_train\
           \ = np.load(input_train_data.path + '/X_train.npy', allow_pickle=True)\n\
           \    y_train = np.load(input_train_data.path + '/y_train.npy', allow_pickle=True)\n\
-          \n    # Initialize and train the decision tree model\n    model = tree.DecisionTreeClassifier(max_depth=3)\n\
+          \n    # Initialize and train the decision tree model\n    model = tree.DecisionTreeClassifier(max_depth=4)\n\
           \    model.fit(X_train, y_train)\n\n    # Create the model output directory\
           \ if it doesn't exist\n    os.makedirs(os.path.dirname(output_model.path),\
           \ exist_ok=True)\n\n    # Save the model\n    with open(output_model.path,\
